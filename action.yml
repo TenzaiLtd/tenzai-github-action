@@ -1,10 +1,6 @@
 name: Tenzai Test
 description: >-
-  Trigger an AI-powered Tenzai security test for a commit range. Fire-and-forget:
-  the job succeeds once the test is triggered; the Tenzai platform posts a
-  "Tenzai Test" check run with the verdict and findings report when the test
-  completes.
-
+  Trigger an AI-powered Tenzai security test for your workflows.
 branding:
   icon: shield
   # Closest marketplace-palette match to the Tenzai cyan/teal primary.
