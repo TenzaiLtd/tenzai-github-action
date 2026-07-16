@@ -1,0 +1,24 @@
+# Add the Tenzai test after a successful deployment. The commit range is
+# derived from this workflow's current and previous successful runs.
+name: Deploy
+on:
+  push:
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy application
+        run: ./deploy.sh
+
+      - uses: TenzaiLtd/tenzai-github-action@v1
+        with:
+          access-key: ${{ secrets.TENZAI_SA_TOKEN }}
+          app-id: ${{ vars.TENZAI_APP_ID }}

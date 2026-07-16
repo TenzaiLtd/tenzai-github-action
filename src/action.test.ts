@@ -1,0 +1,214 @@
+import { afterEach, expect, test, vi } from 'vitest';
+
+import {
+  run,
+  type ActionContext,
+  type CoreApi,
+  type GitHubApi,
+} from './action.js';
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+function mockCore(overrides: Record<string, string> = {}) {
+  const inputs: Record<string, string> = {
+    'access-key': 'tza_access-key',
+    'app-id': '11111111-1111-1111-1111-111111111111',
+    'dry-run': 'false',
+    ...overrides,
+  };
+  const getInput = vi.fn(
+    (name: string, options?: { required?: boolean }): string => {
+      const value = inputs[name] ?? '';
+      if (options?.required && !value) throw new Error(`${name} is required`);
+      return value;
+    },
+  );
+  const getBooleanInput = vi.fn(
+    (name: string): boolean => inputs[name] === 'true',
+  );
+  const setSecret = vi.fn();
+  const setFailed = vi.fn();
+  const notice = vi.fn();
+  const summary = {
+    addRaw: vi.fn(),
+    write: vi.fn(),
+  };
+  summary.addRaw.mockReturnValue(summary);
+  summary.write.mockResolvedValue(summary);
+  const core = {
+    getInput,
+    getBooleanInput,
+    setSecret,
+    setFailed,
+    notice,
+    startGroup: vi.fn(),
+    endGroup: vi.fn(),
+    summary,
+  };
+  return {
+    core: core as unknown as CoreApi,
+    notice,
+    setFailed,
+    setSecret,
+    summary,
+  };
+}
+
+function workflowContext(): ActionContext {
+  return {
+    repo: { owner: 'example', repo: 'web-app' },
+    runId: 200,
+    sha: 'current-sha',
+  } as unknown as ActionContext;
+}
+
+function mockGitHub(previousRuns = [{ id: 100, head_sha: 'previous-sha' }]): {
+  getWorkflowRun: ReturnType<typeof vi.fn>;
+  github: GitHubApi;
+  listWorkflowRuns: ReturnType<typeof vi.fn>;
+} {
+  const getWorkflowRun = vi.fn().mockResolvedValue({
+    data: { workflow_id: 42 },
+  });
+  const listWorkflowRuns = vi.fn().mockResolvedValue({
+    data: { workflow_runs: previousRuns },
+  });
+  const github = {
+    rest: {
+      actions: {
+        getWorkflowRun,
+        listWorkflowRuns,
+      },
+    },
+  };
+  return {
+    getWorkflowRun,
+    github: github as unknown as GitHubApi,
+    listWorkflowRuns,
+  };
+}
+
+test('triggers a commit-diff test through the Tenzai API', async () => {
+  const { core, setFailed, setSecret, summary } = mockCore();
+  const { github } = mockGitHub();
+  const fetchMock = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(jsonResponse({ id: 'test-id' }, 201));
+
+  await run({ core, github, context: workflowContext() });
+
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  const [url, options] = fetchMock.mock.calls[0]!;
+  expect(String(url)).toBe(
+    'https://api.tenzai.io/v1/applications/11111111-1111-1111-1111-111111111111/tests',
+  );
+  expect(new Headers(options?.headers).get('Authorization')).toBe(
+    'Bearer tza_access-key',
+  );
+  expect(JSON.parse(String(options?.body))).toEqual({
+    trigger: 'MANUAL',
+    profileConfig: {
+      profile: 'COMMIT_DIFF',
+      fromCommit: 'previous-sha',
+      toCommit: 'current-sha',
+    },
+  });
+  expect(setFailed).not.toHaveBeenCalled();
+  expect(setSecret).toHaveBeenCalledWith('tza_access-key');
+  expect(summary.addRaw).toHaveBeenCalledWith(
+    expect.stringMatching(/Tenzai test triggered/),
+  );
+});
+
+test('validates authentication and application access in dry-run mode', async () => {
+  const { core, notice, setFailed } = mockCore({ 'dry-run': 'true' });
+  const fetchMock = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(
+      jsonResponse({ id: '11111111-1111-1111-1111-111111111111' }),
+    );
+
+  await run({
+    core,
+    github: {} as GitHubApi,
+    context: {} as ActionContext,
+  });
+
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  const [url, options] = fetchMock.mock.calls[0]!;
+  expect(String(url)).toBe(
+    'https://api.tenzai.io/v1/applications/11111111-1111-1111-1111-111111111111',
+  );
+  expect(options?.method).toBe('GET');
+  expect(setFailed).not.toHaveBeenCalled();
+  expect(notice).toHaveBeenCalledWith(
+    expect.stringMatching(/authentication and application access validated/),
+  );
+});
+
+test('uses the GitHub SDK to detect the previous successful workflow run', async () => {
+  const { core, summary } = mockCore();
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    jsonResponse({ id: 'test-id' }, 201),
+  );
+  const { getWorkflowRun, github, listWorkflowRuns } = mockGitHub([
+    { id: 200, head_sha: 'current-sha' },
+    { id: 100, head_sha: 'previous-sha' },
+  ]);
+
+  await run({ core, github, context: workflowContext() });
+
+  expect(getWorkflowRun).toHaveBeenCalledWith({
+    owner: 'example',
+    repo: 'web-app',
+    run_id: 200,
+  });
+  expect(listWorkflowRuns).toHaveBeenCalledWith({
+    owner: 'example',
+    repo: 'web-app',
+    workflow_id: 42,
+    status: 'success',
+    per_page: 100,
+  });
+  expect(summary.addRaw).toHaveBeenCalledWith(
+    expect.stringMatching(/`previous-sha` → `current-sha`/),
+  );
+});
+
+test('skips the first successful run of a workflow', async () => {
+  const { core, notice, setFailed } = mockCore();
+  const { github } = mockGitHub([]);
+  const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+  await run({ core, github, context: workflowContext() });
+
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(setFailed).not.toHaveBeenCalled();
+  expect(notice).toHaveBeenCalledWith(
+    expect.stringMatching(/No previous successful run/),
+  );
+});
+
+test('reports Tenzai API errors', async () => {
+  const { core, setFailed } = mockCore();
+  const { github } = mockGitHub();
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    jsonResponse({ detail: 'test rejected' }, 409),
+  );
+
+  await run({ core, github, context: workflowContext() });
+
+  expect(setFailed).toHaveBeenCalledOnce();
+  expect(setFailed).toHaveBeenCalledWith(
+    'Tenzai test request failed (HTTP 409): test rejected',
+  );
+});

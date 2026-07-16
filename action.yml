@@ -1,0 +1,38 @@
+name: Tenzai Test
+description: >-
+  Trigger an AI-powered Tenzai security test for a commit range. Fire-and-forget:
+  the job succeeds once the test is triggered; the Tenzai platform posts a
+  "Tenzai Test" check run with the verdict and findings report when the test
+  completes.
+
+branding:
+  icon: shield
+  # Closest marketplace-palette match to the Tenzai cyan/teal primary.
+  color: blue
+
+inputs:
+  access-key:
+    description: >-
+      Production Tenzai service-account access key (tza_...) with app:read and
+      scan:trigger scopes. Store it as a repository secret.
+    required: true
+  app-id:
+    description: >-
+      ID of an existing Tenzai application. Create the application in the
+      Tenzai UI first (with a target URL, code source, and credentials),
+      then copy its ID from the app settings page.
+    required: true
+  dry-run:
+    description: >-
+      Validate configuration, authentication, and application access without
+      triggering a test.
+    required: false
+    default: 'false'
+  github-token:
+    description: GitHub token used to read workflow-run history.
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: node24
+  main: dist/index.js
