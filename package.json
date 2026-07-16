@@ -11,7 +11,7 @@
     "build": "ncc build src/main.ts --out dist --license licenses.txt --minify",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "test": "ncc build src/action.test.ts --out .test-dist --minify && node --test .test-dist/index.js",
+    "test": "vitest run",
     "check": "npm run format:check && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
@@ -22,6 +22,7 @@
     "@types/node": "24.13.3",
     "@vercel/ncc": "0.44.1",
     "prettier": "3.8.1",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
   }
 }

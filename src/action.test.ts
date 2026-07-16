@@ -1,5 +1,4 @@
-import assert from 'node:assert/strict';
-import test, { type TestContext } from 'node:test';
+import { afterEach, expect, test, vi } from 'vitest';
 
 import {
   run,
@@ -15,67 +14,53 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-type CoreState = {
-  failed: string[];
-  groups: string[];
-  notices: string[];
-  secrets: string[];
-  summary: string;
-};
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
-function createCore(overrides: Record<string, string> = {}): {
-  core: CoreApi;
-  state: CoreState;
-} {
+function mockCore(overrides: Record<string, string> = {}) {
   const inputs: Record<string, string> = {
     'access-key': 'tza_access-key',
     'app-id': '11111111-1111-1111-1111-111111111111',
     'dry-run': 'false',
     ...overrides,
   };
-  const state: CoreState = {
-    failed: [],
-    groups: [],
-    notices: [],
-    secrets: [],
-    summary: '',
-  };
-  const summary = {
-    addRaw(value: string) {
-      state.summary += value;
-      return summary;
-    },
-    async write() {
-      return summary;
-    },
-  };
-  const core = {
-    getInput(name: string, options?: { required?: boolean }) {
+  const getInput = vi.fn(
+    (name: string, options?: { required?: boolean }): string => {
       const value = inputs[name] ?? '';
       if (options?.required && !value) throw new Error(`${name} is required`);
       return value;
     },
-    getBooleanInput(name: string) {
-      return inputs[name] === 'true';
-    },
-    setSecret(value: string) {
-      state.secrets.push(value);
-    },
-    setFailed(message: string | Error) {
-      state.failed.push(String(message));
-    },
-    notice(message: string | Error) {
-      state.notices.push(String(message));
-    },
-    startGroup(name: string) {
-      state.groups.push(`start:${name}`);
-    },
-    endGroup() {
-      state.groups.push('end');
-    },
+  );
+  const getBooleanInput = vi.fn(
+    (name: string): boolean => inputs[name] === 'true',
+  );
+  const setSecret = vi.fn();
+  const setFailed = vi.fn();
+  const notice = vi.fn();
+  const summary = {
+    addRaw: vi.fn(),
+    write: vi.fn(),
+  };
+  summary.addRaw.mockReturnValue(summary);
+  summary.write.mockResolvedValue(summary);
+  const core = {
+    getInput,
+    getBooleanInput,
+    setSecret,
+    setFailed,
+    notice,
+    startGroup: vi.fn(),
+    endGroup: vi.fn(),
     summary,
   };
-  return { core: core as unknown as CoreApi, state };
+  return {
+    core: core as unknown as CoreApi,
+    notice,
+    setFailed,
+    setSecret,
+    summary,
+  };
 }
 
 function workflowContext(): ActionContext {
@@ -86,56 +71,50 @@ function workflowContext(): ActionContext {
   } as unknown as ActionContext;
 }
 
-type GitHubCalls = {
-  currentRun: object[];
-  workflowRuns: object[];
-};
-
-function workflowGithub(
-  previousRuns = [{ id: 100, head_sha: 'previous-sha' }],
-): { calls: GitHubCalls; github: GitHubApi } {
-  const calls: GitHubCalls = { currentRun: [], workflowRuns: [] };
+function mockGitHub(previousRuns = [{ id: 100, head_sha: 'previous-sha' }]): {
+  getWorkflowRun: ReturnType<typeof vi.fn>;
+  github: GitHubApi;
+  listWorkflowRuns: ReturnType<typeof vi.fn>;
+} {
+  const getWorkflowRun = vi.fn().mockResolvedValue({
+    data: { workflow_id: 42 },
+  });
+  const listWorkflowRuns = vi.fn().mockResolvedValue({
+    data: { workflow_runs: previousRuns },
+  });
   const github = {
     rest: {
       actions: {
-        async getWorkflowRun(parameters: object) {
-          calls.currentRun.push(parameters);
-          return { data: { workflow_id: 42 } };
-        },
-        async listWorkflowRuns(parameters: object) {
-          calls.workflowRuns.push(parameters);
-          return { data: { workflow_runs: previousRuns } };
-        },
+        getWorkflowRun,
+        listWorkflowRuns,
       },
     },
   };
-  return { calls, github: github as unknown as GitHubApi };
+  return {
+    getWorkflowRun,
+    github: github as unknown as GitHubApi,
+    listWorkflowRuns,
+  };
 }
 
-test('triggers a commit-diff test through the Tenzai API', async (t) => {
-  const { core, state } = createCore();
-  const { github } = workflowGithub();
-  const requests: Array<{ url: string; options: RequestInit }> = [];
-  t.mock.method(
-    globalThis,
-    'fetch',
-    async (url: string | URL | Request, options: RequestInit = {}) => {
-      requests.push({ url: String(url), options });
-      return jsonResponse({ id: 'test-id' }, 201);
-    },
-  );
+test('triggers a commit-diff test through the Tenzai API', async () => {
+  const { core, setFailed, setSecret, summary } = mockCore();
+  const { github } = mockGitHub();
+  const fetchMock = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(jsonResponse({ id: 'test-id' }, 201));
 
   await run({ core, github, context: workflowContext() });
 
-  assert.equal(
-    requests[0]?.url,
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  const [url, options] = fetchMock.mock.calls[0]!;
+  expect(String(url)).toBe(
     'https://api.tenzai.io/v1/applications/11111111-1111-1111-1111-111111111111/tests',
   );
-  assert.equal(
-    new Headers(requests[0]?.options.headers).get('Authorization'),
+  expect(new Headers(options?.headers).get('Authorization')).toBe(
     'Bearer tza_access-key',
   );
-  assert.deepEqual(JSON.parse(String(requests[0]?.options.body)), {
+  expect(JSON.parse(String(options?.body))).toEqual({
     trigger: 'MANUAL',
     profileConfig: {
       profile: 'COMMIT_DIFF',
@@ -143,22 +122,20 @@ test('triggers a commit-diff test through the Tenzai API', async (t) => {
       toCommit: 'current-sha',
     },
   });
-  assert.deepEqual(state.failed, []);
-  assert.deepEqual(state.secrets, ['tza_access-key']);
-  assert.match(state.summary, /Tenzai test triggered/);
+  expect(setFailed).not.toHaveBeenCalled();
+  expect(setSecret).toHaveBeenCalledWith('tza_access-key');
+  expect(summary.addRaw).toHaveBeenCalledWith(
+    expect.stringMatching(/Tenzai test triggered/),
+  );
 });
 
-test('validates authentication and application access in dry-run mode', async (t) => {
-  const { core, state } = createCore({ 'dry-run': 'true' });
-  const requests: Array<{ url: string; options: RequestInit }> = [];
-  t.mock.method(
-    globalThis,
-    'fetch',
-    async (url: string | URL | Request, options: RequestInit = {}) => {
-      requests.push({ url: String(url), options });
-      return jsonResponse({ id: '11111111-1111-1111-1111-111111111111' });
-    },
-  );
+test('validates authentication and application access in dry-run mode', async () => {
+  const { core, notice, setFailed } = mockCore({ 'dry-run': 'true' });
+  const fetchMock = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(
+      jsonResponse({ id: '11111111-1111-1111-1111-111111111111' }),
+    );
 
   await run({
     core,
@@ -166,71 +143,72 @@ test('validates authentication and application access in dry-run mode', async (t
     context: {} as ActionContext,
   });
 
-  assert.equal(requests.length, 1);
-  assert.equal(
-    requests[0]?.url,
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  const [url, options] = fetchMock.mock.calls[0]!;
+  expect(String(url)).toBe(
     'https://api.tenzai.io/v1/applications/11111111-1111-1111-1111-111111111111',
   );
-  assert.equal(requests[0]?.options.method, 'GET');
-  assert.deepEqual(state.failed, []);
-  assert.match(
-    state.notices[0] ?? '',
-    /authentication and application access validated/,
+  expect(options?.method).toBe('GET');
+  expect(setFailed).not.toHaveBeenCalled();
+  expect(notice).toHaveBeenCalledWith(
+    expect.stringMatching(/authentication and application access validated/),
   );
 });
 
-test('uses the GitHub SDK to detect the previous successful workflow run', async (t) => {
-  const { core, state } = createCore();
-  t.mock.method(globalThis, 'fetch', async () =>
+test('uses the GitHub SDK to detect the previous successful workflow run', async () => {
+  const { core, summary } = mockCore();
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
     jsonResponse({ id: 'test-id' }, 201),
   );
-  const { calls, github } = workflowGithub([
+  const { getWorkflowRun, github, listWorkflowRuns } = mockGitHub([
     { id: 200, head_sha: 'current-sha' },
     { id: 100, head_sha: 'previous-sha' },
   ]);
 
   await run({ core, github, context: workflowContext() });
 
-  assert.deepEqual(calls.currentRun, [
-    { owner: 'example', repo: 'web-app', run_id: 200 },
-  ]);
-  assert.deepEqual(calls.workflowRuns, [
-    {
-      owner: 'example',
-      repo: 'web-app',
-      workflow_id: 42,
-      status: 'success',
-      per_page: 100,
-    },
-  ]);
-  assert.match(state.summary, /`previous-sha` → `current-sha`/);
+  expect(getWorkflowRun).toHaveBeenCalledWith({
+    owner: 'example',
+    repo: 'web-app',
+    run_id: 200,
+  });
+  expect(listWorkflowRuns).toHaveBeenCalledWith({
+    owner: 'example',
+    repo: 'web-app',
+    workflow_id: 42,
+    status: 'success',
+    per_page: 100,
+  });
+  expect(summary.addRaw).toHaveBeenCalledWith(
+    expect.stringMatching(/`previous-sha` → `current-sha`/),
+  );
 });
 
-test('skips the first successful run of a workflow', async (t) => {
-  const { core, state } = createCore();
-  const { github } = workflowGithub([]);
-  t.mock.method(globalThis, 'fetch', async () => {
-    assert.fail('fetch should not be called');
-  });
+test('skips the first successful run of a workflow', async () => {
+  const { core, notice, setFailed } = mockCore();
+  const { github } = mockGitHub([]);
+  const fetchMock = vi.spyOn(globalThis, 'fetch');
 
   await run({ core, github, context: workflowContext() });
 
-  assert.deepEqual(state.failed, []);
-  assert.match(state.notices[0] ?? '', /No previous successful run/);
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(setFailed).not.toHaveBeenCalled();
+  expect(notice).toHaveBeenCalledWith(
+    expect.stringMatching(/No previous successful run/),
+  );
 });
 
-test('reports Tenzai API errors', async (t) => {
-  const { core, state } = createCore();
-  const { github } = workflowGithub();
-  t.mock.method(globalThis, 'fetch', async () =>
+test('reports Tenzai API errors', async () => {
+  const { core, setFailed } = mockCore();
+  const { github } = mockGitHub();
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
     jsonResponse({ detail: 'test rejected' }, 409),
   );
 
   await run({ core, github, context: workflowContext() });
 
-  assert.equal(state.failed.length, 1);
-  assert.match(
-    state.failed[0] ?? '',
-    /Tenzai test request failed \(HTTP 409\): test rejected/,
+  expect(setFailed).toHaveBeenCalledOnce();
+  expect(setFailed).toHaveBeenCalledWith(
+    'Tenzai test request failed (HTTP 409): test rejected',
   );
 });
