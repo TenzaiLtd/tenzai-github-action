@@ -36,6 +36,7 @@ CI repeats these checks and fails when rebuilding changes the committed producti
 - Production endpoints are fixed at `https://api.tenzai.io` and `https://app.tenzai.io`.
 - Application targets are the source of truth; the action has no target, environment, server, commit-range, or output inputs.
 - `to` is the current workflow SHA. `from` is the previous successful run SHA of the same workflow.
+- `repository` is the current workflow repository slug in `owner/repo` form.
 - The first successful workflow run skips because no previous deployment exists.
 - Triggering is fire-and-forget. The Tenzai platform posts the eventual `Tenzai Test` check run and findings report.
 

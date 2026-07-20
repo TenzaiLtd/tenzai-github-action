@@ -101,6 +101,7 @@ async function detectPreviousWorkflowCommit(
 async function triggerTest(
   saToken: string,
   inputs: ActionInputs,
+  repository: string,
   fromCommit: string,
   toCommit: string,
   core: CoreApi,
@@ -116,6 +117,7 @@ async function triggerTest(
           trigger: 'MANUAL',
           profileConfig: {
             profile: 'COMMIT_DIFF',
+            repository,
             fromCommit,
             toCommit,
           },
@@ -140,6 +142,13 @@ async function triggerTest(
 
 function shortCommit(commit: string): string {
   return commit.slice(0, 12);
+}
+
+function repositorySlug(context: ActionContext): string {
+  return (
+    process.env.GITHUB_REPOSITORY ||
+    `${context.repo.owner}/${context.repo.repo}`
+  );
 }
 
 async function writeSummary(
@@ -226,6 +235,7 @@ export async function run({
     const testId = await triggerTest(
       inputs.saToken,
       inputs,
+      repositorySlug(context),
       fromCommit,
       context.sha,
       core,
