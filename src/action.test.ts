@@ -16,6 +16,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 function mockCore(overrides: Record<string, string> = {}) {
@@ -98,6 +99,7 @@ function mockGitHub(previousRuns = [{ id: 100, head_sha: 'previous-sha' }]): {
 }
 
 test('triggers a commit-diff test through the Tenzai API', async () => {
+  vi.stubEnv('GITHUB_REPOSITORY', 'canonical/repository');
   const { core, setFailed, setSecret, summary } = mockCore();
   const { github } = mockGitHub();
   const fetchMock = vi
@@ -118,6 +120,7 @@ test('triggers a commit-diff test through the Tenzai API', async () => {
     trigger: 'MANUAL',
     profileConfig: {
       profile: 'COMMIT_DIFF',
+      repository: 'canonical/repository',
       fromCommit: 'previous-sha',
       toCommit: 'current-sha',
     },
@@ -126,6 +129,22 @@ test('triggers a commit-diff test through the Tenzai API', async () => {
   expect(setSecret).toHaveBeenCalledWith('tza_access-key');
   expect(summary.addRaw).toHaveBeenCalledWith(
     expect.stringMatching(/Tenzai test triggered/),
+  );
+});
+
+test('derives the repository slug from the GitHub context', async () => {
+  vi.stubEnv('GITHUB_REPOSITORY', undefined);
+  const { core } = mockCore();
+  const { github } = mockGitHub();
+  const fetchMock = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(jsonResponse({ id: 'test-id' }, 201));
+
+  await run({ core, github, context: workflowContext() });
+
+  const [, options] = fetchMock.mock.calls[0]!;
+  expect(JSON.parse(String(options?.body)).profileConfig.repository).toBe(
+    'example/web-app',
   );
 });
 
