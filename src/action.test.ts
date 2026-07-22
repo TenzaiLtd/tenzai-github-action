@@ -23,6 +23,7 @@ function mockCore(overrides: Record<string, string> = {}) {
   const inputs: Record<string, string> = {
     'access-key': 'tza_access-key',
     'app-id': '11111111-1111-1111-1111-111111111111',
+    'base-url': 'https://api.tenzai.io',
     'dry-run': 'false',
     ...overrides,
   };
@@ -214,6 +215,27 @@ test('skips the first successful run of a workflow', async () => {
   expect(setFailed).not.toHaveBeenCalled();
   expect(notice).toHaveBeenCalledWith(
     expect.stringMatching(/No previous successful run/),
+  );
+});
+
+test('uses custom base-url for API calls and summary links', async () => {
+  const { core, setFailed, summary } = mockCore({
+    'base-url': 'https://api.staging.tenzai.io',
+  });
+  const { github } = mockGitHub();
+  const fetchMock = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(jsonResponse({ id: 'test-id' }, 201));
+
+  await run({ core, github, context: workflowContext() });
+
+  const [url] = fetchMock.mock.calls[0]!;
+  expect(String(url)).toBe(
+    'https://api.staging.tenzai.io/v1/applications/11111111-1111-1111-1111-111111111111/tests',
+  );
+  expect(setFailed).not.toHaveBeenCalled();
+  expect(summary.addRaw).toHaveBeenCalledWith(
+    expect.stringContaining('app.staging.tenzai.io'),
   );
 });
 
