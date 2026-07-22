@@ -9,7 +9,7 @@ branding:
 inputs:
   access-key:
     description: >-
-      Production Tenzai service-account access key (tza_...) with app:read and
+      Tenzai service-account access key (tza_...) with app:read and
       scan:trigger scopes. Store it as a repository secret.
     required: true
   app-id:
@@ -18,6 +18,13 @@ inputs:
       Tenzai UI first (with a target URL, code source, and credentials),
       then copy its ID from the app settings page.
     required: true
+  base-url:
+    description: >-
+      Tenzai platform base URL. Override to target a non-production environment
+      (e.g. https://api.staging.tenzai.io). The corresponding app URL is
+      derived automatically (api.* → app.*).
+    required: false
+    default: 'https://api.tenzai.io'
   dry-run:
     description: >-
       Validate configuration, authentication, and application access without

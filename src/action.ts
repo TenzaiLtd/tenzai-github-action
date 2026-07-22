@@ -1,8 +1,7 @@
 import type * as actionsCore from '@actions/core';
 import type { context as actionsContext, getOctokit } from '@actions/github';
 
-const TENZAI_APP_URL = 'https://app.tenzai.io';
-const TENZAI_API_URL = 'https://api.tenzai.io';
+const DEFAULT_API_URL = 'https://api.tenzai.io';
 
 export type CoreApi = typeof actionsCore;
 export type ActionContext = typeof actionsContext;
@@ -15,6 +14,7 @@ type RunDependencies = {
 };
 
 type ActionInputs = {
+  apiBaseUrl: string;
   appId: string;
   dryRun: boolean;
   saToken: string;
@@ -45,8 +45,12 @@ async function requestJson(
   return data;
 }
 
-function platformUrl(path: string): string {
-  return `${TENZAI_API_URL}/v1/${path}`;
+function appUrl(apiBaseUrl: string): string {
+  return apiBaseUrl.replace('://api.', '://app.');
+}
+
+function platformUrl(apiBaseUrl: string, path: string): string {
+  return `${apiBaseUrl}/v1/${path}`;
 }
 
 function authorizationHeaders(saToken: string): Record<string, string> {
@@ -59,9 +63,10 @@ function authorizationHeaders(saToken: string): Record<string, string> {
 async function validateApplication(
   saToken: string,
   appId: string,
+  apiBaseUrl: string,
 ): Promise<void> {
   await requestJson(
-    platformUrl(`applications/${encodeURIComponent(appId)}`),
+    platformUrl(apiBaseUrl, `applications/${encodeURIComponent(appId)}`),
     {
       method: 'GET',
       headers: authorizationHeaders(saToken),
@@ -109,7 +114,7 @@ async function triggerTest(
   core.startGroup('Trigger commit-diff test');
   try {
     const data = await requestJson(
-      platformUrl(`applications/${encodeURIComponent(inputs.appId)}/tests`),
+      platformUrl(inputs.apiBaseUrl, `applications/${encodeURIComponent(inputs.appId)}/tests`),
       {
         method: 'POST',
         headers: authorizationHeaders(saToken),
@@ -180,8 +185,10 @@ async function writeSummary(
 function readInputs(core: CoreApi): ActionInputs {
   const saToken = core.getInput('access-key', { required: true });
   core.setSecret(saToken);
+  const rawBaseUrl = core.getInput('base-url') || DEFAULT_API_URL;
   return {
     saToken,
+    apiBaseUrl: rawBaseUrl.replace(/\/+$/, ''),
     appId: core.getInput('app-id', { required: true }),
     dryRun: core.getBooleanInput('dry-run'),
   };
@@ -195,7 +202,7 @@ export async function run({
   try {
     const inputs = readInputs(core);
     if (inputs.dryRun) {
-      await validateApplication(inputs.saToken, inputs.appId);
+      await validateApplication(inputs.saToken, inputs.appId, inputs.apiBaseUrl);
       core.notice(
         'dry-run: authentication and application access validated; no test triggered.',
       );
@@ -240,7 +247,7 @@ export async function run({
       context.sha,
       core,
     );
-    const testUrl = `${TENZAI_APP_URL}/apps/${encodeURIComponent(inputs.appId)}/tests/${encodeURIComponent(testId)}`;
+    const testUrl = `${appUrl(inputs.apiBaseUrl)}/apps/${encodeURIComponent(inputs.appId)}/tests/${encodeURIComponent(testId)}`;
     const test = { id: testId, url: testUrl };
 
     core.notice(`Triggered commit-diff test ${testId}: ${testUrl}`);
