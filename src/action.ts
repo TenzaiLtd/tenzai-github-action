@@ -114,7 +114,10 @@ async function triggerTest(
   core.startGroup('Trigger commit-diff test');
   try {
     const data = await requestJson(
-      platformUrl(inputs.apiBaseUrl, `applications/${encodeURIComponent(inputs.appId)}/tests`),
+      platformUrl(
+        inputs.apiBaseUrl,
+        `applications/${encodeURIComponent(inputs.appId)}/tests`,
+      ),
       {
         method: 'POST',
         headers: authorizationHeaders(saToken),
@@ -202,7 +205,11 @@ export async function run({
   try {
     const inputs = readInputs(core);
     if (inputs.dryRun) {
-      await validateApplication(inputs.saToken, inputs.appId, inputs.apiBaseUrl);
+      await validateApplication(
+        inputs.saToken,
+        inputs.appId,
+        inputs.apiBaseUrl,
+      );
       core.notice(
         'dry-run: authentication and application access validated; no test triggered.',
       );
