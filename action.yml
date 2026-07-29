@@ -32,7 +32,7 @@ inputs:
     required: false
     default: 'false'
   github-token:
-    description: GitHub token used to read workflow-run history.
+    description: GitHub token used to read workflow-run history and compare commits.
     required: false
     default: ${{ github.token }}
 

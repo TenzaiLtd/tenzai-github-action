@@ -41,16 +41,16 @@ The same workflow is available in [`examples/deployment-test.yml`](./examples/de
 
 ### What gets auto-detected
 
-The action treats successful runs of the workflow containing it as deployment history:
+The action treats runs of the workflow containing it as deployment history:
 
-| Value  | Source                                                                |
-| ------ | --------------------------------------------------------------------- |
-| `to`   | Current workflow run SHA                                              |
-| `from` | Previous successful run SHA of the same workflow, via the Actions API |
+| Value  | Source                                                                                       |
+| ------ | -------------------------------------------------------------------------------------------- |
+| `to`   | Current workflow run SHA                                                                     |
+| `from` | Merge base of `to` and the most recent earlier run SHA of the same workflow, via GitHub APIs |
 
-The first successful run is skipped because no previous deployment exists yet. Place the action after the deployment step so only completed deployments establish commit ranges. Use one deployment environment per workflow; if a workflow deploys multiple environments, give each environment its own workflow.
+The merge base keeps the range on the current commit's branch line, including when the previous run came from a divergent hotfix branch. Cancelled and in-progress runs remain eligible so an intervening release is not skipped. The first run is skipped because no previous deployment exists yet. Place the action after the deployment step. Use one deployment environment per workflow; if a workflow deploys multiple environments, give each environment its own workflow.
 
-Workflow-run discovery requires `actions: read` permission on the workflow's `GITHUB_TOKEN`, as shown above.
+Base-commit discovery requires `actions: read` to inspect workflow runs and `contents: read` to compare commits, as shown above.
 
 ## Inputs
 
@@ -59,7 +59,7 @@ Workflow-run discovery requires `actions: read` permission on the workflow's `GI
 | `access-key`   | ✅       | —              | Production Tenzai service-account access key (`tza_...`) with `app:read` and `scan:trigger` scopes.              |
 | `app-id`       | ✅       | —              | ID of an existing Tenzai application. Create it in the Tenzai UI first, then copy it from the app settings page. |
 | `dry-run`      |          | `'false'`      | Validate configuration, authentication, and application access without triggering a test.                        |
-| `github-token` |          | `github.token` | GitHub token used to read previous workflow runs. The default workflow token is normally sufficient.             |
+| `github-token` |          | `github.token` | GitHub token used to read workflow runs and compare commits. The default workflow token is normally sufficient.  |
 
 ## Test results: the `Tenzai Test` check run
 
