@@ -75,14 +75,15 @@ async function validateApplication(
   );
 }
 
-async function detectPreviousWorkflowCommit(
+async function detectBaseCommit(
   github: GitHubApi,
   context: ActionContext,
   core: CoreApi,
+  toCommit: string,
 ): Promise<string> {
   if (!context.runId) throw new Error('GitHub workflow run ID is unavailable.');
 
-  core.startGroup('Detect previous workflow run');
+  core.startGroup('Detect base commit');
   try {
     const { data: currentRun } = await github.rest.actions.getWorkflowRun({
       ...context.repo,
@@ -91,13 +92,19 @@ async function detectPreviousWorkflowCommit(
     const { data } = await github.rest.actions.listWorkflowRuns({
       ...context.repo,
       workflow_id: currentRun.workflow_id,
-      status: 'success',
       per_page: 100,
     });
-    return (
-      data.workflow_runs.find((candidate) => candidate.id !== context.runId)
-        ?.head_sha ?? ''
-    );
+    const previousRun = [...data.workflow_runs]
+      .filter((candidate) => candidate.run_number < currentRun.run_number)
+      .sort((left, right) => right.run_number - left.run_number)[0];
+    if (!previousRun) return '';
+
+    const { data: comparison } =
+      await github.rest.repos.compareCommitsWithBasehead({
+        ...context.repo,
+        basehead: `${previousRun.head_sha}...${toCommit}`,
+      });
+    return comparison.merge_base_commit.sha;
   } finally {
     core.endGroup();
   }
@@ -227,14 +234,15 @@ export async function run({
     if (!context.sha) {
       throw new Error('GitHub workflow commit SHA is unavailable.');
     }
-    const fromCommit = await detectPreviousWorkflowCommit(
+    const fromCommit = await detectBaseCommit(
       github,
       context,
       core,
+      context.sha,
     );
     if (!fromCommit) {
       core.notice(
-        'No previous successful run of this workflow was found; no test triggered.',
+        'No previous run of this workflow was found; no test triggered.',
       );
       await writeSummary(
         core,

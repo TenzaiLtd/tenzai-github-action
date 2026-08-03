@@ -35,9 +35,9 @@ CI repeats these checks and fails when rebuilding changes the committed producti
 - The service-account key requires `app:read` and `scan:trigger` scopes.
 - Production endpoints are fixed at `https://api.tenzai.io` and `https://app.tenzai.io`.
 - Application targets are the source of truth; the action has no target, environment, server, commit-range, or output inputs.
-- `to` is the current workflow SHA. `from` is the previous successful run SHA of the same workflow.
+- `to` is the current workflow SHA. `from` is its merge base with the most recent earlier run SHA of the same workflow, regardless of run status.
 - `repository` is the current workflow repository slug in `owner/repo` form.
-- The first successful workflow run skips because no previous deployment exists.
+- The first workflow run skips because no previous deployment exists.
 - Triggering is fire-and-forget. The Tenzai platform posts the eventual `Tenzai Test` check run and findings report.
 
 Keep `src/action.ts` independent from process-global GitHub SDK state by injecting its dependencies through `run`. Tests should use Vitest spies and small typed dependency factories rather than importing the side-effecting `src/main.ts` entrypoint.

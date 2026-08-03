@@ -73,16 +73,29 @@ function workflowContext(): ActionContext {
   } as unknown as ActionContext;
 }
 
-function mockGitHub(previousRuns = [{ id: 100, head_sha: 'previous-sha' }]): {
+function mockGitHub(
+  previousRuns: Array<{
+    conclusion?: string;
+    head_sha: string;
+    id: number;
+    run_number: number;
+    status?: string;
+  }> = [{ id: 100, head_sha: 'previous-sha', run_number: 1 }],
+  mergeBaseSha = 'previous-sha',
+): {
+  compareCommitsWithBasehead: ReturnType<typeof vi.fn>;
   getWorkflowRun: ReturnType<typeof vi.fn>;
   github: GitHubApi;
   listWorkflowRuns: ReturnType<typeof vi.fn>;
 } {
   const getWorkflowRun = vi.fn().mockResolvedValue({
-    data: { workflow_id: 42 },
+    data: { workflow_id: 42, run_number: 2 },
   });
   const listWorkflowRuns = vi.fn().mockResolvedValue({
     data: { workflow_runs: previousRuns },
+  });
+  const compareCommitsWithBasehead = vi.fn().mockResolvedValue({
+    data: { merge_base_commit: { sha: mergeBaseSha } },
   });
   const github = {
     rest: {
@@ -90,9 +103,13 @@ function mockGitHub(previousRuns = [{ id: 100, head_sha: 'previous-sha' }]): {
         getWorkflowRun,
         listWorkflowRuns,
       },
+      repos: {
+        compareCommitsWithBasehead,
+      },
     },
   };
   return {
+    compareCommitsWithBasehead,
     getWorkflowRun,
     github: github as unknown as GitHubApi,
     listWorkflowRuns,
@@ -175,15 +192,23 @@ test('validates authentication and application access in dry-run mode', async ()
   );
 });
 
-test('uses the GitHub SDK to detect the previous successful workflow run', async () => {
+test('uses the merge base when the previous run is on a divergent hotfix branch', async () => {
   const { core, summary } = mockCore();
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(
     jsonResponse({ id: 'test-id' }, 201),
   );
-  const { getWorkflowRun, github, listWorkflowRuns } = mockGitHub([
-    { id: 200, head_sha: 'current-sha' },
-    { id: 100, head_sha: 'previous-sha' },
-  ]);
+  const {
+    compareCommitsWithBasehead,
+    getWorkflowRun,
+    github,
+    listWorkflowRuns,
+  } = mockGitHub(
+    [
+      { id: 200, head_sha: 'current-sha', run_number: 2 },
+      { id: 100, head_sha: 'release-branch-sha', run_number: 1 },
+    ],
+    'common-ancestor-sha',
+  );
 
   await run({ core, github, context: workflowContext() });
 
@@ -196,15 +221,63 @@ test('uses the GitHub SDK to detect the previous successful workflow run', async
     owner: 'example',
     repo: 'web-app',
     workflow_id: 42,
-    status: 'success',
     per_page: 100,
   });
+  expect(compareCommitsWithBasehead).toHaveBeenCalledWith({
+    owner: 'example',
+    repo: 'web-app',
+    basehead: 'release-branch-sha...current-sha',
+  });
   expect(summary.addRaw).toHaveBeenCalledWith(
-    expect.stringMatching(/`previous-sha` → `current-sha`/),
+    expect.stringMatching(/`common-ances` → `current-sha`/),
   );
 });
 
-test('skips the first successful run of a workflow', async () => {
+test.each([
+  {
+    label: 'cancelled',
+    previousRun: {
+      id: 100,
+      head_sha: 'cancelled-sha',
+      run_number: 1,
+      status: 'completed',
+      conclusion: 'cancelled',
+    },
+  },
+  {
+    label: 'in-progress',
+    previousRun: {
+      id: 100,
+      head_sha: 'in-progress-sha',
+      run_number: 1,
+      status: 'in_progress',
+    },
+  },
+])('uses the most recent earlier $label run', async ({ previousRun }) => {
+  const { core } = mockCore();
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    jsonResponse({ id: 'test-id' }, 201),
+  );
+  const { compareCommitsWithBasehead, github } = mockGitHub([
+    {
+      id: 300,
+      head_sha: 'later-run-sha',
+      run_number: 3,
+      status: 'in_progress',
+    },
+    previousRun,
+  ]);
+
+  await run({ core, github, context: workflowContext() });
+
+  expect(compareCommitsWithBasehead).toHaveBeenCalledWith(
+    expect.objectContaining({
+      basehead: `${previousRun.head_sha}...current-sha`,
+    }),
+  );
+});
+
+test('skips the first run of a workflow', async () => {
   const { core, notice, setFailed } = mockCore();
   const { github } = mockGitHub([]);
   const fetchMock = vi.spyOn(globalThis, 'fetch');
@@ -213,9 +286,7 @@ test('skips the first successful run of a workflow', async () => {
 
   expect(fetchMock).not.toHaveBeenCalled();
   expect(setFailed).not.toHaveBeenCalled();
-  expect(notice).toHaveBeenCalledWith(
-    expect.stringMatching(/No previous successful run/),
-  );
+  expect(notice).toHaveBeenCalledWith(expect.stringMatching(/No previous run/));
 });
 
 test('uses custom base-url for API calls and summary links', async () => {

@@ -1,5 +1,5 @@
-# Add the Tenzai test after a successful deployment. The commit range is
-# derived from this workflow's current and previous successful runs.
+# Add the Tenzai test after a successful deployment. The commit range ends at
+# the current SHA and starts at its merge base with the previous workflow run.
 name: Deploy
 on:
   push:
