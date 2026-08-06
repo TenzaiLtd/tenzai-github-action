@@ -360,3 +360,109 @@ test('mode: trigger with no app-id fails loudly', async () => {
   expect(fetchMock).not.toHaveBeenCalled();
   expect(setFailed).toHaveBeenCalledWith(expect.stringMatching(/app-id/));
 });
+
+function orgSummary(
+  overrides: Partial<{ id: string; name: string; slug: string }> = {},
+) {
+  return {
+    id: 'org-1111-1111-1111-111111111111',
+    name: 'Acme Security',
+    slug: 'acme-security',
+    ...overrides,
+  };
+}
+
+test('mode: list writes the org and every app across pages to the summary', async () => {
+  const { core, setFailed, summary } = mockCore({ mode: 'list', 'app-id': '' });
+  const fetchMock = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(jsonResponse([orgSummary()]))
+    .mockResolvedValueOnce(
+      jsonResponse({
+        items: [
+          {
+            id: 'app-1',
+            name: 'App One',
+            applicationType: 'WEB_APP',
+            code: {
+              sources: [{ repository: 'https://github.com/acme/app-one' }],
+            },
+          },
+        ],
+        total: 2,
+        page: 1,
+        pages: 2,
+        size: 1,
+      }),
+    )
+    .mockResolvedValueOnce(
+      jsonResponse({
+        items: [
+          { id: 'app-2', name: 'App Two', applicationType: 'NETWORK_HOST' },
+        ],
+        total: 2,
+        page: 2,
+        pages: 2,
+        size: 1,
+      }),
+    );
+
+  await run({ core, github: {} as GitHubApi, context: {} as ActionContext });
+
+  expect(setFailed).not.toHaveBeenCalled();
+  expect(fetchMock).toHaveBeenCalledTimes(3);
+  expect(String(fetchMock.mock.calls[0]![0])).toBe(
+    'https://api.tenzai.io/v1/organizations/mine',
+  );
+  expect(String(fetchMock.mock.calls[1]![0])).toContain(
+    `applications?org_id=${orgSummary().id}&page=1&size=100`,
+  );
+  expect(String(fetchMock.mock.calls[2]![0])).toContain('page=2');
+  const written = String(summary.addRaw.mock.calls[0]![0]);
+  expect(written).toContain('Acme Security');
+  expect(written).toContain('app-1');
+  expect(written).toContain('app-2');
+  expect(written).toContain('https://github.com/acme/app-one');
+});
+
+test('mode: list with zero applications reports that plainly, not as an error', async () => {
+  const { core, setFailed, summary } = mockCore({ mode: 'list', 'app-id': '' });
+  vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(jsonResponse([orgSummary()]))
+    .mockResolvedValueOnce(
+      jsonResponse({ items: [], total: 0, page: 1, pages: 1, size: 100 }),
+    );
+
+  await run({ core, github: {} as GitHubApi, context: {} as ActionContext });
+
+  expect(setFailed).not.toHaveBeenCalled();
+  expect(String(summary.addRaw.mock.calls[0]![0])).toContain(
+    'No applications found',
+  );
+});
+
+test('mode: list throws if /organizations/mine returns anything but exactly one org', async () => {
+  const { core, setFailed } = mockCore({ mode: 'list', 'app-id': '' });
+  vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse([]));
+
+  await run({ core, github: {} as GitHubApi, context: {} as ActionContext });
+
+  expect(setFailed).toHaveBeenCalledWith(
+    expect.stringMatching(/exactly one organization/),
+  );
+});
+
+test('mode: list propagates a bad access-key as a failure', async () => {
+  const { core, setFailed } = mockCore({ mode: 'list', 'app-id': '' });
+  vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+    jsonResponse({ detail: 'Invalid access key' }, 401),
+  );
+
+  await run({ core, github: {} as GitHubApi, context: {} as ActionContext });
+
+  expect(setFailed).toHaveBeenCalledWith(
+    expect.stringMatching(
+      /organization lookup failed.*401.*Invalid access key/is,
+    ),
+  );
+});

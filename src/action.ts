@@ -193,6 +193,100 @@ async function writeSummary(
   await core.summary.addRaw(lines.join('\n')).write();
 }
 
+type OrgSummary = { id: string; name: string; slug: string };
+
+async function fetchOwnOrg(
+  saToken: string,
+  apiBaseUrl: string,
+): Promise<OrgSummary> {
+  const data = await requestJson(
+    platformUrl(apiBaseUrl, 'organizations/mine'),
+    { method: 'GET', headers: authorizationHeaders(saToken) },
+    'Tenzai organization lookup failed',
+  );
+  if (!Array.isArray(data) || data.length !== 1) {
+    throw new Error(
+      `Expected exactly one organization for this service account, got ${
+        Array.isArray(data) ? data.length : 'a non-array response'
+      }.`,
+    );
+  }
+  return (data as OrgSummary[])[0]!;
+}
+
+type AppSummary = {
+  applicationType: string;
+  id: string;
+  name: string;
+  repository: string | null;
+};
+
+function appSummaryFromRaw(raw: unknown): AppSummary {
+  const app = raw as Record<string, unknown>;
+  const code = app.code as
+    { sources?: Array<{ repository?: string }> } | undefined;
+  return {
+    id: String(app.id),
+    name: String(app.name),
+    applicationType: String(
+      app.applicationType ?? app.application_type ?? 'UNKNOWN',
+    ),
+    repository: code?.sources?.[0]?.repository ?? null,
+  };
+}
+
+async function fetchAllApps(
+  saToken: string,
+  apiBaseUrl: string,
+  orgId: string,
+): Promise<AppSummary[]> {
+  const apps: AppSummary[] = [];
+  let page = 1;
+  const size = 100;
+  for (;;) {
+    const data = (await requestJson(
+      platformUrl(
+        apiBaseUrl,
+        `applications?org_id=${encodeURIComponent(orgId)}&page=${page}&size=${size}`,
+      ),
+      { method: 'GET', headers: authorizationHeaders(saToken) },
+      'Tenzai application list failed',
+    )) as { items: unknown[]; pages: number };
+    for (const raw of data.items) {
+      apps.push(appSummaryFromRaw(raw));
+    }
+    if (page >= data.pages) break;
+    page += 1;
+  }
+  return apps;
+}
+
+async function writeListSummary(
+  core: CoreApi,
+  org: OrgSummary,
+  apps: AppSummary[],
+): Promise<void> {
+  const lines = [
+    '### 🛡️ Tenzai — organization and applications',
+    '',
+    `**Organization:** ${org.name} (\`${org.id}\`)`,
+    '',
+  ];
+  if (apps.length === 0) {
+    lines.push('No applications found in this organization.');
+  } else {
+    lines.push(
+      '| App ID | Name | Type | Repository |',
+      '|---|---|---|---|',
+      ...apps.map(
+        (a) =>
+          `| \`${a.id}\` | ${a.name} | ${a.applicationType} | ${a.repository ?? '—'} |`,
+      ),
+    );
+  }
+  await core.summary.addRaw(lines.join('\n')).write();
+}
+
 function readInputs(core: CoreApi): ActionInputs {
   const saToken = core.getInput('access-key', { required: true });
   core.setSecret(saToken);
@@ -223,6 +317,20 @@ export async function run({
 }: RunDependencies): Promise<void> {
   try {
     const inputs = readInputs(core);
+    if (inputs.mode === 'list') {
+      const org = await fetchOwnOrg(inputs.saToken, inputs.apiBaseUrl);
+      const apps = await fetchAllApps(
+        inputs.saToken,
+        inputs.apiBaseUrl,
+        org.id,
+      );
+      await writeListSummary(core, org, apps);
+      core.notice(
+        `Found ${apps.length} application(s) in organization ${org.id}.`,
+      );
+      return;
+    }
+
     if (inputs.dryRun) {
       await validateApplication(
         inputs.saToken,
