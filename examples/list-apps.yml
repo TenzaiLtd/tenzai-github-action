@@ -2,8 +2,7 @@ name: Discover Tenzai org and apps
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   list:

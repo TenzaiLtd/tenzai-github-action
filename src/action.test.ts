@@ -466,3 +466,44 @@ test('mode: list propagates a bad access-key as a failure', async () => {
     ),
   );
 });
+
+test('mode: list throws if /organizations/mine returns more than one org', async () => {
+  const { core, setFailed } = mockCore({ mode: 'list', 'app-id': '' });
+  vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+    jsonResponse([orgSummary(), orgSummary({ id: 'org-2222' })]),
+  );
+
+  await run({ core, github: {} as GitHubApi, context: {} as ActionContext });
+
+  expect(setFailed).toHaveBeenCalledWith(
+    expect.stringMatching(/exactly one organization/),
+  );
+});
+
+test('mode: list propagates a 401 from the applications fetch, not just the org fetch', async () => {
+  const { core, setFailed } = mockCore({ mode: 'list', 'app-id': '' });
+  vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(jsonResponse([orgSummary()]))
+    .mockResolvedValueOnce(jsonResponse({ detail: 'Invalid access key' }, 401));
+
+  await run({ core, github: {} as GitHubApi, context: {} as ActionContext });
+
+  expect(setFailed).toHaveBeenCalledWith(
+    expect.stringMatching(/application list failed.*401.*Invalid access key/is),
+  );
+});
+
+test('mode: list fails fast instead of looping forever when the applications response has no numeric pages', async () => {
+  const { core, setFailed } = mockCore({ mode: 'list', 'app-id': '' });
+  const fetchMock = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(jsonResponse([orgSummary()]))
+    .mockResolvedValueOnce(jsonResponse({ items: [] }));
+
+  await run({ core, github: {} as GitHubApi, context: {} as ActionContext });
+
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(setFailed).toHaveBeenCalledWith(
+    expect.stringMatching(/items array and pages count/),
+  );
+});

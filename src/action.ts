@@ -231,7 +231,7 @@ function appSummaryFromRaw(raw: unknown): AppSummary {
     applicationType: String(
       app.applicationType ?? app.application_type ?? 'UNKNOWN',
     ),
-    repository: code?.sources?.[0]?.repository ?? null,
+    repository: code?.sources?.find((s) => s?.repository)?.repository ?? null,
   };
 }
 
@@ -244,18 +244,31 @@ async function fetchAllApps(
   let page = 1;
   const size = 100;
   for (;;) {
-    const data = (await requestJson(
+    const data = await requestJson(
       platformUrl(
         apiBaseUrl,
         `applications?org_id=${encodeURIComponent(orgId)}&page=${page}&size=${size}`,
       ),
       { method: 'GET', headers: authorizationHeaders(saToken) },
       'Tenzai application list failed',
-    )) as { items: unknown[]; pages: number };
+    );
+    if (
+      typeof data !== 'object' ||
+      data === null ||
+      !('items' in data) ||
+      !Array.isArray(data.items) ||
+      !('pages' in data) ||
+      !Number.isInteger(data.pages)
+    ) {
+      throw new Error(
+        'Tenzai application list response did not contain a valid items array and pages count.',
+      );
+    }
+    const pages = data.pages as number;
     for (const raw of data.items) {
       apps.push(appSummaryFromRaw(raw));
     }
-    if (page >= data.pages) break;
+    if (page >= pages) break;
     page += 1;
   }
   return apps;

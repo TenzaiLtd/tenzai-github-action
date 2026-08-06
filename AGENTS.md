@@ -30,10 +30,9 @@ CI repeats these checks and fails when rebuilding changes the committed producti
 
 ## Action Contract
 
-- Required inputs: `access-key` and `app-id`.
-- `app-id` is required only when `mode` is `trigger` (the default); unused in `mode: list`.
+- Required inputs: `access-key` (always) and `app-id` (when `mode` is `trigger`, the default); `app-id` is unused in `mode: list`.
 - `mode: list` looks up the caller's organization (`GET /v1/organizations/mine`) and every application in it (`GET /v1/applications`), writing both to the Step Summary — it never triggers a test and never inspects GitHub workflow history. Only the `app:read` scope is needed for this mode; `scan:trigger` isn't required.
-- Optional inputs: `dry-run` and `github-token`.
+- Optional inputs: `dry-run`, `github-token`, and `mode`.
 - The service-account key requires `app:read` and `scan:trigger` scopes.
 - Production endpoints are fixed at `https://api.tenzai.io` and `https://app.tenzai.io`.
 - Application targets are the source of truth; the action has no target, environment, server, commit-range, or output inputs.
