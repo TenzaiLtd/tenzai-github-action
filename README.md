@@ -39,6 +39,21 @@ jobs:
 
 The same workflow is available in [`examples/deployment-test.yml`](./examples/deployment-test.yml).
 
+## Discover your org and apps
+
+If you don't yet know the `org_id`/`app-id` values to use above, run the action in list mode:
+
+```yaml
+- uses: TenzaiLtd/tenzai-github-action@v1
+  with:
+    access-key: ${{ secrets.TENZAI_SA_TOKEN }}
+    mode: list
+```
+
+No `app-id` needed, and no `actions:`/`contents:` permissions either — list mode never inspects workflow history. It writes your organization and every application in it (ID, name, type, linked repository) to this job's Summary tab. The service-account key only needs `app:read` for this — `scan:trigger` isn't required.
+
+The same workflow is available in [`examples/list-apps.yml`](./examples/list-apps.yml).
+
 ### What gets auto-detected
 
 The action treats runs of the workflow containing it as deployment history:
@@ -54,12 +69,13 @@ Base-commit discovery requires `actions: read` to inspect workflow runs and `con
 
 ## Inputs
 
-| Input          | Required | Default        | Description                                                                                                      |
-| -------------- | -------- | -------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `access-key`   | ✅       | —              | Production Tenzai service-account access key (`tza_...`) with `app:read` and `scan:trigger` scopes.              |
-| `app-id`       | ✅       | —              | ID of an existing Tenzai application. Create it in the Tenzai UI first, then copy it from the app settings page. |
-| `dry-run`      |          | `'false'`      | Validate configuration, authentication, and application access without triggering a test.                        |
-| `github-token` |          | `github.token` | GitHub token used to read workflow runs and compare commits. The default workflow token is normally sufficient.  |
+| Input          | Required    | Default        | Description                                                                                                                               |
+| -------------- | ----------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `access-key`   | ✅          | —              | Production Tenzai service-account access key (`tza_...`) with `app:read` and `scan:trigger` scopes.                                       |
+| `app-id`       | Conditional | —              | ID of an existing Tenzai application. Required when `mode` is `trigger` (the default); unused in `mode: list`.                            |
+| `mode`         |             | `'trigger'`    | `trigger` triggers a commit-diff test against `app-id`. `list` looks up your organization and its applications instead.                   |
+| `dry-run`      |             | `'false'`      | Validate configuration, authentication, and application access without triggering a test. Only meaningful with `mode: trigger`.           |
+| `github-token` |             | `github.token` | GitHub token used to read workflow runs and compare commits. The default workflow token is normally sufficient. Not used in `mode: list`. |
 
 ## Test results: the `Tenzai Test` check run
 

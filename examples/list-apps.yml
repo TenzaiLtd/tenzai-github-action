@@ -1,0 +1,15 @@
+name: Discover Tenzai org and apps
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: TenzaiLtd/tenzai-github-action@v1
+        with:
+          access-key: ${{ secrets.TENZAI_SA_TOKEN }}
+          mode: list
