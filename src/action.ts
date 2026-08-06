@@ -17,6 +17,7 @@ type ActionInputs = {
   apiBaseUrl: string;
   appId: string;
   dryRun: boolean;
+  mode: 'trigger' | 'list';
   saToken: string;
 };
 
@@ -196,11 +197,22 @@ function readInputs(core: CoreApi): ActionInputs {
   const saToken = core.getInput('access-key', { required: true });
   core.setSecret(saToken);
   const rawBaseUrl = core.getInput('base-url') || DEFAULT_API_URL;
+  const rawMode = core.getInput('mode') || 'trigger';
+  if (rawMode !== 'trigger' && rawMode !== 'list') {
+    throw new Error(
+      `Unrecognized mode "${rawMode}" — must be "trigger" or "list".`,
+    );
+  }
+  const appId = core.getInput('app-id');
+  if (rawMode === 'trigger' && !appId) {
+    throw new Error('app-id is required when mode is "trigger" (the default).');
+  }
   return {
     saToken,
     apiBaseUrl: rawBaseUrl.replace(/\/+$/, ''),
-    appId: core.getInput('app-id', { required: true }),
+    appId,
     dryRun: core.getBooleanInput('dry-run'),
+    mode: rawMode,
   };
 }
 

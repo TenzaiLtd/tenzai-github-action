@@ -25,6 +25,7 @@ function mockCore(overrides: Record<string, string> = {}) {
     'app-id': '11111111-1111-1111-1111-111111111111',
     'base-url': 'https://api.tenzai.io',
     'dry-run': 'false',
+    mode: 'trigger',
     ...overrides,
   };
   const getInput = vi.fn(
@@ -323,4 +324,39 @@ test('reports Tenzai API errors', async () => {
   expect(setFailed).toHaveBeenCalledWith(
     'Tenzai test request failed (HTTP 409): test rejected',
   );
+});
+
+test('rejects an unrecognized mode value without calling fetch', async () => {
+  const { core, setFailed } = mockCore({ mode: 'oops' });
+  const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+  await run({ core, github: {} as GitHubApi, context: {} as ActionContext });
+
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(setFailed).toHaveBeenCalledWith(
+    expect.stringMatching(/mode.*trigger.*list|trigger.*list.*mode/i),
+  );
+});
+
+test('defaults mode to trigger, preserving existing behavior', async () => {
+  vi.stubEnv('GITHUB_REPOSITORY', 'canonical/repository');
+  const { core, setFailed } = mockCore();
+  const { github } = mockGitHub();
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    jsonResponse({ id: 'test-id' }, 201),
+  );
+
+  await run({ core, github, context: workflowContext() });
+
+  expect(setFailed).not.toHaveBeenCalled();
+});
+
+test('mode: trigger with no app-id fails loudly', async () => {
+  const { core, setFailed } = mockCore({ mode: 'trigger', 'app-id': '' });
+  const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+  await run({ core, github: {} as GitHubApi, context: {} as ActionContext });
+
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(setFailed).toHaveBeenCalledWith(expect.stringMatching(/app-id/));
 });
