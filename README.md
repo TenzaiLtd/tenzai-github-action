@@ -52,15 +52,33 @@ The merge base keeps the range on the current commit's branch line, including wh
 
 Base-commit discovery requires `actions: read` to inspect workflow runs and `contents: read` to compare commits, as shown above.
 
+## Discover your org and apps
+
+If you don't yet know the `org_id`/`app-id` values to use above, run the action in list mode:
+
+```yaml
+- uses: TenzaiLtd/tenzai-github-action@v1
+  with:
+    access-key: ${{ secrets.TENZAI_SA_TOKEN }}
+    mode: list
+```
+
+No `app-id` needed, and no `actions:`/`contents:` permissions either — list mode never inspects workflow history. It writes your organization and every application in it (ID, name, type, linked repository) to this job's Summary tab. The service-account key only needs `app:read` for this — `scan:trigger` isn't required.
+
+The same workflow is available in [`examples/list-apps.yml`](./examples/list-apps.yml).
+
+**Note:** on a public repository, this job's Summary tab — including your org name and every application's name/type/repository — is visible to anyone. Run this from a private repository, or restrict who can view workflow run summaries, if that inventory shouldn't be public.
+
 ## Inputs
 
-| Input          | Required | Default        | Description                                                                                                                                                                                                                        |
-| -------------- | -------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `access-key`   | ✅       | —              | Production Tenzai service-account access key (`tza_...`) with `app:read` and `scan:trigger` scopes.                                                                                                                                |
-| `app-id`       | ✅       | —              | ID of an existing Tenzai application. Create it in the Tenzai UI first, then copy it from the app settings page.                                                                                                                   |
-| `dry-run`      |          | `'false'`      | Validate configuration, authentication, and application access without triggering a test.                                                                                                                                          |
-| `org-id`       |          | —              | ID of the organization `app-id` belongs to. Only needed if your tenant has more than one active organization — otherwise the platform infers it and requests fail with a 400 if it can't. Find it in the Tenzai UI's org settings. |
-| `github-token` |          | `github.token` | GitHub token used to read workflow runs and compare commits. The default workflow token is normally sufficient.                                                                                                                    |
+| Input          | Required    | Default        | Description                                                                                                                                                                                                                                       |
+| -------------- | ----------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `access-key`   | ✅          | —              | Production Tenzai service-account access key (`tza_...`) with `app:read` and `scan:trigger` scopes.                                                                                                                                               |
+| `app-id`       | Conditional | —              | ID of an existing Tenzai application. Required when `mode` is `trigger` (the default); unused in `mode: list`.                                                                                                                                    |
+| `mode`         |             | `'trigger'`    | `trigger` triggers a commit-diff test against `app-id`. `list` looks up your organization and its applications instead.                                                                                                                           |
+| `dry-run`      |             | `'false'`      | Validate configuration, authentication, and application access without triggering a test. Only meaningful with `mode: trigger`.                                                                                                                   |
+| `org-id`       |             | —              | ID of the organization `app-id` belongs to. Only needed if your tenant has more than one active organization -- otherwise the platform infers it and requests fail with a 400 if it can't. Find it in the Tenzai UI's org settings.               |
+| `github-token` |             | `github.token` | GitHub token used to read workflow runs and compare commits. The default workflow token is normally sufficient. Not used for API calls in `mode: list` -- the default `github.token` still works fine, just isn't read for anything in this mode. |
 
 ## Test results: the `Tenzai Test` check run
 
