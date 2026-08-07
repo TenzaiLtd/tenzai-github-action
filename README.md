@@ -59,6 +59,7 @@ Base-commit discovery requires `actions: read` to inspect workflow runs and `con
 | `access-key`   | ✅       | —              | Production Tenzai service-account access key (`tza_...`) with `app:read` and `scan:trigger` scopes.              |
 | `app-id`       | ✅       | —              | ID of an existing Tenzai application. Create it in the Tenzai UI first, then copy it from the app settings page. |
 | `dry-run`      |          | `'false'`      | Validate configuration, authentication, and application access without triggering a test.                        |
+| `org-id`       |          | —              | ID of the organization `app-id` belongs to. Only needed if your tenant has more than one active organization — otherwise the platform infers it and requests fail with a 400 if it can't. Find it in the Tenzai UI's org settings. |
 | `github-token` |          | `github.token` | GitHub token used to read workflow runs and compare commits. The default workflow token is normally sufficient.  |
 
 ## Test results: the `Tenzai Test` check run

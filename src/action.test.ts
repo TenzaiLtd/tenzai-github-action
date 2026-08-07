@@ -166,6 +166,42 @@ test('derives the repository slug from the GitHub context', async () => {
   );
 });
 
+test('includes org_id in the trigger request when org-id is set', async () => {
+  vi.stubEnv('GITHUB_REPOSITORY', 'canonical/repository');
+  const { core } = mockCore({ 'org-id': 'org-aaaa' });
+  const { github } = mockGitHub();
+  const fetchMock = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(jsonResponse({ id: 'test-id' }, 201));
+
+  await run({ core, github, context: workflowContext() });
+
+  const [url] = fetchMock.mock.calls[0]!;
+  expect(String(url)).toBe(
+    'https://api.tenzai.io/v1/applications/11111111-1111-1111-1111-111111111111/tests?org_id=org-aaaa',
+  );
+});
+
+test('includes org_id in the dry-run validation request when org-id is set', async () => {
+  const { core } = mockCore({ 'dry-run': 'true', 'org-id': 'org-aaaa' });
+  const fetchMock = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(
+      jsonResponse({ id: '11111111-1111-1111-1111-111111111111' }),
+    );
+
+  await run({
+    core,
+    github: {} as GitHubApi,
+    context: {} as ActionContext,
+  });
+
+  const [url] = fetchMock.mock.calls[0]!;
+  expect(String(url)).toBe(
+    'https://api.tenzai.io/v1/applications/11111111-1111-1111-1111-111111111111?org_id=org-aaaa',
+  );
+});
+
 test('validates authentication and application access in dry-run mode', async () => {
   const { core, notice, setFailed } = mockCore({ 'dry-run': 'true' });
   const fetchMock = vi

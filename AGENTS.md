@@ -31,7 +31,7 @@ CI repeats these checks and fails when rebuilding changes the committed producti
 ## Action Contract
 
 - Required inputs: `access-key` and `app-id`.
-- Optional inputs: `dry-run` and `github-token`.
+- Optional inputs: `dry-run`, `org-id`, and `github-token`. `org-id` disambiguates which organization `app-id` belongs to when the service account's tenant has more than one active organization — omitted, the platform infers it and 400s if it can't.
 - The service-account key requires `app:read` and `scan:trigger` scopes.
 - Production endpoints are fixed at `https://api.tenzai.io` and `https://app.tenzai.io`.
 - Application targets are the source of truth; the action has no target, environment, server, commit-range, or output inputs.

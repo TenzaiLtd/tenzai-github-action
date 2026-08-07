@@ -31,6 +31,14 @@ inputs:
       triggering a test.
     required: false
     default: 'false'
+  org-id:
+    description: >-
+      ID of the organization app-id belongs to. Only needed when the
+      service account's tenant has more than one active organization,
+      in which case the platform can't infer which one you mean and
+      requests fail with a 400. Find it in the Tenzai UI's org settings.
+    required: false
+    default: ''
   github-token:
     description: GitHub token used to read workflow-run history and compare commits.
     required: false
