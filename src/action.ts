@@ -18,6 +18,7 @@ type ActionInputs = {
   appId: string;
   dryRun: boolean;
   mode: 'trigger' | 'list';
+  orgId: string;
   saToken: string;
 };
 
@@ -54,6 +55,16 @@ function platformUrl(apiBaseUrl: string, path: string): string {
   return `${apiBaseUrl}/v1/${path}`;
 }
 
+// Appends `?org_id=` only when set. Omitting it entirely (rather than
+// sending an empty value) preserves the platform's own tenant-default
+// resolution for callers that don't need to disambiguate — org-id is an
+// opt-in disambiguator, not a newly-required input.
+function withOrgId(url: string, orgId: string): string {
+  if (!orgId) return url;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}org_id=${encodeURIComponent(orgId)}`;
+}
+
 function authorizationHeaders(saToken: string): Record<string, string> {
   return {
     Authorization: `Bearer ${saToken}`,
@@ -65,9 +76,13 @@ async function validateApplication(
   saToken: string,
   appId: string,
   apiBaseUrl: string,
+  orgId: string,
 ): Promise<void> {
   await requestJson(
-    platformUrl(apiBaseUrl, `applications/${encodeURIComponent(appId)}`),
+    withOrgId(
+      platformUrl(apiBaseUrl, `applications/${encodeURIComponent(appId)}`),
+      orgId,
+    ),
     {
       method: 'GET',
       headers: authorizationHeaders(saToken),
@@ -122,9 +137,12 @@ async function triggerTest(
   core.startGroup('Trigger commit-diff test');
   try {
     const data = await requestJson(
-      platformUrl(
-        inputs.apiBaseUrl,
-        `applications/${encodeURIComponent(inputs.appId)}/tests`,
+      withOrgId(
+        platformUrl(
+          inputs.apiBaseUrl,
+          `applications/${encodeURIComponent(inputs.appId)}/tests`,
+        ),
+        inputs.orgId,
       ),
       {
         method: 'POST',
@@ -320,6 +338,7 @@ function readInputs(core: CoreApi): ActionInputs {
     appId,
     dryRun: core.getBooleanInput('dry-run'),
     mode: rawMode,
+    orgId: core.getInput('org-id'),
   };
 }
 
@@ -349,6 +368,7 @@ export async function run({
         inputs.saToken,
         inputs.appId,
         inputs.apiBaseUrl,
+        inputs.orgId,
       );
       core.notice(
         'dry-run: authentication and application access validated; no test triggered.',
