@@ -17,7 +17,7 @@ inputs:
       ID of an existing Tenzai application. Create the application in the
       Tenzai UI first (with a target URL, code source, and credentials),
       then copy its ID from the app settings page.
-    required: true
+    required: false
   base-url:
     description: >-
       Tenzai platform base URL. Override to target a non-production environment
@@ -35,6 +35,13 @@ inputs:
     description: GitHub token used to read workflow-run history and compare commits.
     required: false
     default: ${{ github.token }}
+  mode:
+    description: >-
+      'trigger' (default) triggers a commit-diff test against app-id.
+      'list' looks up your organization and its applications instead —
+      use this to discover the org_id/app-id values for other inputs.
+    required: false
+    default: 'trigger'
 
 runs:
   using: node24
